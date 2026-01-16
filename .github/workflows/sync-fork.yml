@@ -1,0 +1,30 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+      - cron: '0 */6 * * *'  # Her 6 saatte bir çalışır
+        workflow_dispatch:  # Manuel olarak da çalıştırabilirsiniz
+
+        jobs:
+          sync:
+              runs-on: ubuntu-latest
+                  permissions:
+                        contents: write
+                              pull-requests: write
+
+                                      steps:
+                                            - uses: actions/checkout@v3
+                                                    with:
+                                                              fetch-depth: 0
+
+                                                                    - name: Sync Fork
+                                                                            run: |
+                                                                                      git config --global user.name "github-actions[bot]"
+                                                                                                git config --global user.email "github-actions[bot]@users.noreply.github.com"
+                                                                                                          
+                                                                                                                    git remote add upstream https://github.com/clawdbot/clawdbot.git || true
+                                                                                                                              git fetch upstream
+                                                                                                                                        
+                                                                                                                                                  # main branch'i güncelle
+                                                                                                                                                            git rebase upstream/main
+                                                                                                                                                                      git push origin main --force-with-lease || true
