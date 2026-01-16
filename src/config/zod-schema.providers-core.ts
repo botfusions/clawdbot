@@ -13,6 +13,20 @@ import {
   RetryConfigSchema,
   requireOpenAllowFrom,
 } from "./zod-schema.core.js";
+import {
+  normalizeTelegramCommandDescription,
+  normalizeTelegramCommandName,
+  resolveTelegramCustomCommands,
+} from "./telegram-custom-commands.js";
+
+const TelegramInlineButtonsScopeSchema = z.enum(["off", "dm", "group", "all", "allowlist"]);
+
+const TelegramCapabilitiesSchema = z.union([
+  z.array(z.string()),
+  z.object({
+    inlineButtons: TelegramInlineButtonsScopeSchema.optional(),
+  }),
+]);
 
 export const TelegramTopicSchema = z.object({
   requireMention: z.boolean().optional(),
@@ -31,11 +45,36 @@ export const TelegramGroupSchema = z.object({
   topics: z.record(z.string(), TelegramTopicSchema.optional()).optional(),
 });
 
+const TelegramCustomCommandSchema = z.object({
+  command: z.string().transform(normalizeTelegramCommandName),
+  description: z.string().transform(normalizeTelegramCommandDescription),
+});
+
+const validateTelegramCustomCommands = (
+  value: { customCommands?: Array<{ command?: string; description?: string }> },
+  ctx: z.RefinementCtx,
+) => {
+  if (!value.customCommands || value.customCommands.length === 0) return;
+  const { issues } = resolveTelegramCustomCommands({
+    commands: value.customCommands,
+    checkReserved: false,
+    checkDuplicates: false,
+  });
+  for (const issue of issues) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customCommands", issue.index, issue.field],
+      message: issue.message,
+    });
+  }
+};
+
 export const TelegramAccountSchemaBase = z.object({
   name: z.string().optional(),
-  capabilities: z.array(z.string()).optional(),
+  capabilities: TelegramCapabilitiesSchema.optional(),
   enabled: z.boolean().optional(),
   commands: ProviderCommandsSchema,
+  customCommands: z.array(TelegramCustomCommandSchema).optional(),
   configWrites: z.boolean().optional(),
   dmPolicy: DmPolicySchema.optional().default("pairing"),
   botToken: z.string().optional(),
@@ -80,6 +119,7 @@ export const TelegramAccountSchema = TelegramAccountSchemaBase.superRefine((valu
     message:
       'channels.telegram.dmPolicy="open" requires channels.telegram.allowFrom to include "*"',
   });
+  validateTelegramCustomCommands(value, ctx);
 });
 
 export const TelegramConfigSchema = TelegramAccountSchemaBase.extend({
@@ -93,6 +133,7 @@ export const TelegramConfigSchema = TelegramAccountSchemaBase.extend({
     message:
       'channels.telegram.dmPolicy="open" requires channels.telegram.allowFrom to include "*"',
   });
+  validateTelegramCustomCommands(value, ctx);
 });
 
 export const DiscordDmSchema = z

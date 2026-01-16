@@ -871,6 +871,7 @@ Notes:
 - `commands.text: false` disables parsing chat messages for commands.
 - `commands.native: "auto"` (default) turns on native commands for Discord/Telegram and leaves Slack off; unsupported channels stay text-only.
 - Set `commands.native: true|false` to force all, or override per channel with `channels.discord.commands.native`, `channels.telegram.commands.native`, `channels.slack.commands.native` (bool or `"auto"`). `false` clears previously registered commands on Discord/Telegram at startup; Slack commands are managed in the Slack app.
+- `channels.telegram.customCommands` adds extra Telegram bot menu entries. Names are normalized; conflicts with native commands are ignored.
 - `commands.bash: true` enables `! <cmd>` to run host shell commands (`/bash <cmd>` also works as an alias). Requires `tools.elevated.enabled` and allowlisting the sender in `tools.elevated.allowFrom.<channel>`.
 - `commands.bashForegroundMs` controls how long bash waits before backgrounding. While a bash job is running, new `! <cmd>` requests are rejected (one at a time).
 - `commands.config: true` enables `/config` (reads/writes `clawdbot.json`).
@@ -929,6 +930,10 @@ Set `channels.telegram.configWrites: false` to block Telegram-initiated config w
           }
         }
       },
+      customCommands: [
+        { command: "backup", description: "Git backup" },
+        { command: "generate", description: "Create an image" }
+      ],
       historyLimit: 50,                     // include last N group messages as context (0 disables)
       replyToMode: "first",                 // off | first | all
       streamMode: "partial",               // off | partial | block (draft streaming; separate from block streaming)
@@ -938,6 +943,7 @@ Set `channels.telegram.configWrites: false` to block Telegram-initiated config w
         breakPreference: "paragraph"       // paragraph | newline | sentence
       },
       actions: { reactions: true, sendMessage: true }, // tool action gates (false disables)
+      reactionNotifications: "own",   // off | own | all
       mediaMaxMb: 5,
       retry: {                             // outbound retry policy
         attempts: 3,
@@ -1266,7 +1272,9 @@ See [Messages](/concepts/messages) for queueing, sessions, and streaming context
 `responsePrefix` is applied to **all outbound replies** (tool summaries, block
 streaming, final replies) across channels unless already present.
 
-If `messages.responsePrefix` is unset, no prefix is applied by default.
+If `messages.responsePrefix` is unset, no prefix is applied by default. WhatsApp self-chat
+replies are the exception: they default to `[{identity.name}]` when set, otherwise
+`[clawdbot]`, so same-phone conversations stay legible.
 Set it to `"auto"` to derive `[{identity.name}]` for the routed agent (when set).
 
 #### Template variables
@@ -2262,6 +2270,9 @@ Controls session scoping, idle expiry, reset triggers, and where the session sto
   session: {
     scope: "per-sender",
     dmScope: "main",
+    identityLinks: {
+      alice: ["telegram:123456789", "discord:987654321012345678"]
+    },
     idleMinutes: 60,
     resetTriggers: ["/new", "/reset"],
     // Default is already per-agent under ~/.clawdbot/agents/<agentId>/sessions/sessions.json
@@ -2290,6 +2301,8 @@ Fields:
   - `main`: all DMs share the main session for continuity.
   - `per-peer`: isolate DMs by sender id across channels.
   - `per-channel-peer`: isolate DMs per channel + sender (recommended for multi-user inboxes).
+- `identityLinks`: map canonical ids to provider-prefixed peers so the same person shares a DM session across channels when using `per-peer` or `per-channel-peer`.
+  - Example: `alice: ["telegram:123456789", "discord:987654321012345678"]`.
 - `agentToAgent.maxPingPongTurns`: max reply-back turns between requester/target (0–5, default 5).
 - `sendPolicy.default`: `allow` or `deny` fallback when no rule matches.
 - `sendPolicy.rules[]`: match by `channel`, `chatType` (`direct|group|room`), or `keyPrefix` (e.g. `cron:`). First deny wins; otherwise allow.

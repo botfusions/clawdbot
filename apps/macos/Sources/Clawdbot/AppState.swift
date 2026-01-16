@@ -257,30 +257,8 @@ final class AppState {
 
         let configRoot = ClawdbotConfigFile.loadDict()
         let configGateway = configRoot["gateway"] as? [String: Any]
-        let configModeRaw = (configGateway?["mode"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let configMode: ConnectionMode? = switch configModeRaw {
-        case "local":
-            .local
-        case "remote":
-            .remote
-        default:
-            nil
-        }
         let configRemoteUrl = (configGateway?["remote"] as? [String: Any])?["url"] as? String
-        let configHasRemoteUrl = !(configRemoteUrl?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty ?? true)
-
-        let storedMode = UserDefaults.standard.string(forKey: connectionModeKey)
-        let resolvedConnectionMode: ConnectionMode = if let configMode {
-            configMode
-        } else if configHasRemoteUrl {
-            .remote
-        } else if let storedMode {
-            ConnectionMode(rawValue: storedMode) ?? .local
-        } else {
-            onboardingSeen ? .local : .unconfigured
-        }
+        let resolvedConnectionMode = ConnectionModeResolver.resolve(root: configRoot).mode
         self.connectionMode = resolvedConnectionMode
 
         let storedRemoteTarget = UserDefaults.standard.string(forKey: remoteTargetKey) ?? ""
@@ -339,6 +317,15 @@ final class AppState {
             return nil
         }
         return host
+    }
+
+    private static func sanitizeSSHTarget(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("ssh ") {
+            return trimmed.replacingOccurrences(of: "ssh ", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
     }
 
     private func startConfigWatcher() {
@@ -406,6 +393,7 @@ final class AppState {
 
         let connectionMode = self.connectionMode
         let remoteTarget = self.remoteTarget
+        let remoteIdentity = self.remoteIdentity
         let desiredMode: String? = switch connectionMode {
         case .local:
             "local"
@@ -435,15 +423,46 @@ final class AppState {
                 changed = true
             }
 
-            if connectionMode == .remote, let host = remoteHost {
+            if connectionMode == .remote {
                 var remote = gateway["remote"] as? [String: Any] ?? [:]
-                let existingUrl = (remote["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let parsedExisting = existingUrl.isEmpty ? nil : URL(string: existingUrl)
-                let scheme = parsedExisting?.scheme?.isEmpty == false ? parsedExisting?.scheme : "ws"
-                let port = parsedExisting?.port ?? 18789
-                let desiredUrl = "\(scheme ?? "ws")://\(host):\(port)"
-                if existingUrl != desiredUrl {
-                    remote["url"] = desiredUrl
+                var remoteChanged = false
+
+                if let host = remoteHost {
+                    let existingUrl = (remote["url"] as? String)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let parsedExisting = existingUrl.isEmpty ? nil : URL(string: existingUrl)
+                    let scheme = parsedExisting?.scheme?.isEmpty == false ? parsedExisting?.scheme : "ws"
+                    let port = parsedExisting?.port ?? 18789
+                    let desiredUrl = "\(scheme ?? "ws")://\(host):\(port)"
+                    if existingUrl != desiredUrl {
+                        remote["url"] = desiredUrl
+                        remoteChanged = true
+                    }
+                }
+
+                let sanitizedTarget = Self.sanitizeSSHTarget(remoteTarget)
+                if !sanitizedTarget.isEmpty {
+                    if (remote["sshTarget"] as? String) != sanitizedTarget {
+                        remote["sshTarget"] = sanitizedTarget
+                        remoteChanged = true
+                    }
+                } else if remote["sshTarget"] != nil {
+                    remote.removeValue(forKey: "sshTarget")
+                    remoteChanged = true
+                }
+
+                let trimmedIdentity = remoteIdentity.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedIdentity.isEmpty {
+                    if (remote["sshIdentity"] as? String) != trimmedIdentity {
+                        remote["sshIdentity"] = trimmedIdentity
+                        remoteChanged = true
+                    }
+                } else if remote["sshIdentity"] != nil {
+                    remote.removeValue(forKey: "sshIdentity")
+                    remoteChanged = true
+                }
+
+                if remoteChanged {
                     gateway["remote"] = remote
                     changed = true
                 }
