@@ -7,17 +7,17 @@ import { resolveModelRefFromString } from "../../agents/model-selection.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR, ensureAgentWorkspace } from "../../agents/workspace.js";
 import { type ClawdbotConfig, loadConfig } from "../../config/config.js";
-import { logVerbose } from "../../globals.js";
 import { defaultRuntime } from "../../runtime.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
-import { hasAudioTranscriptionConfig, isAudio, transcribeInboundAudio } from "../transcription.js";
+import { applyMediaUnderstanding } from "../../media-understanding/apply.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { resolveDefaultModel } from "./directive-handling.js";
 import { resolveReplyDirectives } from "./get-reply-directives.js";
 import { handleInlineActions } from "./get-reply-inline-actions.js";
 import { runPreparedReply } from "./get-reply-run.js";
+import { finalizeInboundContext } from "./inbound-context.js";
 import { initSessionState } from "./session.js";
 import { stageSandboxMedia } from "./stage-sandbox-media.js";
 import { createTypingController } from "./typing.js";
@@ -75,18 +75,16 @@ export async function getReplyFromConfig(
   });
   opts?.onTypingController?.(typing);
 
-  let transcribedText: string | undefined;
-  if (hasAudioTranscriptionConfig(cfg) && isAudio(ctx.MediaType)) {
-    const transcribed = await transcribeInboundAudio(cfg, ctx, defaultRuntime);
-    if (transcribed?.text) {
-      transcribedText = transcribed.text;
-      ctx.Body = transcribed.text;
-      ctx.Transcript = transcribed.text;
-      logVerbose("Replaced Body with audio transcript for reply flow");
-    }
-  }
+  finalizeInboundContext(ctx);
 
-  const commandAuthorized = ctx.CommandAuthorized ?? true;
+  await applyMediaUnderstanding({
+    ctx,
+    cfg,
+    agentDir,
+    activeModel: { provider, model },
+  });
+
+  const commandAuthorized = ctx.CommandAuthorized ?? false;
   resolveCommandAuthorization({
     ctx,
     cfg,
@@ -100,6 +98,7 @@ export async function getReplyFromConfig(
   let {
     sessionCtx,
     sessionEntry,
+    previousSessionEntry,
     sessionStore,
     sessionKey,
     sessionId,
@@ -179,6 +178,7 @@ export async function getReplyFromConfig(
     cfg,
     agentId,
     sessionEntry,
+    previousSessionEntry,
     sessionStore,
     sessionKey,
     storePath,
@@ -251,7 +251,6 @@ export async function getReplyFromConfig(
     model,
     perMessageQueueMode,
     perMessageQueueOptions,
-    transcribedText,
     typing,
     opts,
     defaultModel,

@@ -21,6 +21,7 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
+import { normalizeSessionDeliveryFields } from "../utils/delivery-context.js";
 import type {
   GatewayAgentRow,
   GatewaySessionRow,
@@ -49,17 +50,16 @@ export function loadSessionEntry(sessionKey: string) {
   const agentId = resolveSessionStoreAgentId(cfg, canonicalKey);
   const storePath = resolveStorePath(sessionCfg?.store, { agentId });
   const store = loadSessionStore(storePath);
-  const parsed = parseAgentSessionKey(canonicalKey);
-  const legacyKey = parsed?.rest ?? parseAgentSessionKey(sessionKey)?.rest ?? undefined;
-  const entry =
-    store[canonicalKey] ?? store[sessionKey] ?? (legacyKey ? store[legacyKey] : undefined);
+  const entry = store[canonicalKey];
   return { cfg, storePath, store, entry, canonicalKey };
 }
 
 export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySessionRow["kind"] {
   if (key === "global") return "global";
   if (key === "unknown") return "unknown";
-  if (entry?.chatType === "group" || entry?.chatType === "room") return "group";
+  if (entry?.chatType === "group" || entry?.chatType === "channel") {
+    return "group";
+  }
   if (key.startsWith("group:") || key.includes(":group:") || key.includes(":channel:")) {
     return "group";
   }
@@ -245,10 +245,8 @@ export function resolveGatewaySessionStoreTarget(params: { cfg: ClawdbotConfig; 
     return { agentId, storePath, canonicalKey, storeKeys };
   }
 
-  const parsed = parseAgentSessionKey(canonicalKey);
   const storeKeys = new Set<string>();
   storeKeys.add(canonicalKey);
-  if (parsed?.rest) storeKeys.add(parsed.rest);
   if (key && key !== canonicalKey) storeKeys.add(key);
   return {
     agentId,
@@ -399,6 +397,7 @@ export function listSessionsFromStore(params: {
               key,
             })
           : undefined);
+      const deliveryFields = normalizeSessionDeliveryFields(entry);
       return {
         key,
         kind: classifySessionKey(key, entry),
@@ -425,9 +424,10 @@ export function listSessionsFromStore(params: {
         modelProvider: entry?.modelProvider,
         model: entry?.model,
         contextTokens: entry?.contextTokens,
-        lastChannel: entry?.lastChannel,
-        lastTo: entry?.lastTo,
-        lastAccountId: entry?.lastAccountId,
+        deliveryContext: deliveryFields.deliveryContext,
+        lastChannel: deliveryFields.lastChannel ?? entry?.lastChannel,
+        lastTo: deliveryFields.lastTo ?? entry?.lastTo,
+        lastAccountId: deliveryFields.lastAccountId ?? entry?.lastAccountId,
       } satisfies GatewaySessionRow;
     })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));

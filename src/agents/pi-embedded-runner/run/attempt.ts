@@ -325,13 +325,7 @@ export async function runEmbeddedAttempt(
       // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.
       activeSession.agent.streamFn = streamSimple;
 
-      applyExtraParamsToAgent(
-        activeSession.agent,
-        params.config,
-        params.provider,
-        params.modelId,
-        params.thinkLevel,
-      );
+      applyExtraParamsToAgent(activeSession.agent, params.config, params.provider, params.modelId);
 
       try {
         const prior = await sanitizeSessionHistory({
@@ -372,6 +366,7 @@ export async function runEmbeddedAttempt(
         verboseLevel: params.verboseLevel,
         reasoningMode: params.reasoningLevel ?? "off",
         shouldEmitToolResult: params.shouldEmitToolResult,
+        shouldEmitToolOutput: params.shouldEmitToolOutput,
         onToolResult: params.onToolResult,
         onReasoningStream: params.onReasoningStream,
         onBlockReply: params.onBlockReply,

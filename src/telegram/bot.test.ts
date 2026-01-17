@@ -9,6 +9,7 @@ import {
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 import { resetInboundDedupe } from "../auto-reply/reply/inbound-dedupe.js";
 import * as replyModule from "../auto-reply/reply.js";
+import { expectInboundContextContract } from "../../test/helpers/inbound-contract.js";
 import { createTelegramBot, getTelegramSequentialKey } from "./bot.js";
 import { resolveTelegramFetch } from "./fetch.js";
 
@@ -583,8 +584,11 @@ describe("createTelegramBot", () => {
 
     expect(replySpy).toHaveBeenCalledTimes(1);
     const payload = replySpy.mock.calls[0][0];
+    expectInboundContextContract(payload);
     expect(payload.WasMentioned).toBe(true);
-    expect(payload.Body).toMatch(/^\[Telegram Test Group id:7 from Ada id:9 2025-01-09T00:00Z\]/);
+    expect(payload.Body).toMatch(/^\[Telegram Test Group id:7 2025-01-09T00:00Z\]/);
+    expect(payload.SenderName).toBe("Ada");
+    expect(payload.SenderId).toBe("9");
   });
 
   it("includes sender identity in group envelope headers", async () => {
@@ -623,9 +627,11 @@ describe("createTelegramBot", () => {
 
     expect(replySpy).toHaveBeenCalledTimes(1);
     const payload = replySpy.mock.calls[0][0];
-    expect(payload.Body).toMatch(
-      /^\[Telegram Ops id:42 from Ada Lovelace \(@ada\) id:99 2025-01-09T00:00Z\]/,
-    );
+    expectInboundContextContract(payload);
+    expect(payload.Body).toMatch(/^\[Telegram Ops id:42 2025-01-09T00:00Z\]/);
+    expect(payload.SenderName).toBe("Ada Lovelace");
+    expect(payload.SenderId).toBe("99");
+    expect(payload.SenderUsername).toBe("ada");
   });
 
   it("reacts to mention-gated group messages when ackReaction is enabled", async () => {
@@ -950,6 +956,39 @@ describe("createTelegramBot", () => {
     });
 
     expect(replySpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts group replies to the bot without explicit mention when requireMention is enabled", async () => {
+    onSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+    loadConfig.mockReturnValue({
+      channels: {
+        telegram: { groups: { "*": { requireMention: true } } },
+      },
+    });
+
+    createTelegramBot({ token: "tok" });
+    const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
+
+    await handler({
+      message: {
+        chat: { id: 456, type: "group", title: "Ops Chat" },
+        text: "following up",
+        date: 1736380800,
+        reply_to_message: {
+          message_id: 42,
+          text: "original reply",
+          from: { id: 999, first_name: "Clawdbot" },
+        },
+      },
+      me: { id: 999, username: "clawdbot_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0][0];
+    expect(payload.WasMentioned).toBe(true);
   });
 
   it("honors routed group activation from session store", async () => {
@@ -2025,9 +2064,11 @@ describe("createTelegramBot", () => {
 
     loadConfig.mockReturnValue({
       commands: { native: true },
-      telegram: {
-        dmPolicy: "open",
-        allowFrom: ["*"],
+      channels: {
+        telegram: {
+          dmPolicy: "open",
+          allowFrom: ["*"],
+        },
       },
     });
 

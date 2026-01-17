@@ -37,6 +37,7 @@ See [Voice Call](/plugins/voice-call) for a concrete example plugin.
 
 - Microsoft Teams is plugin-only as of 2026.1.15; install `@clawdbot/msteams` if you use Teams.
 - [Voice Call](/plugins/voice-call) — `@clawdbot/voice-call`
+- [Zalo Personal](/plugins/zalouser) — `@clawdbot/zalouser`
 - [Matrix](/channels/matrix) — `@clawdbot/matrix`
 - [Zalo](/channels/zalo) — `@clawdbot/zalo`
 - [Microsoft Teams](/channels/msteams) — `@clawdbot/msteams`
@@ -156,9 +157,11 @@ export default {
 ```bash
 clawdbot plugins list
 clawdbot plugins info <id>
-clawdbot plugins install <path>              # add a local file/dir to plugins.load.paths
+clawdbot plugins install <path>                 # copy a local file/dir into ~/.clawdbot/extensions/<id>
 clawdbot plugins install ./extensions/voice-call # relative path ok
-clawdbot plugins install ./plugin.tgz        # install from a local tarball
+clawdbot plugins install ./plugin.tgz           # install from a local tarball
+clawdbot plugins install ./plugin.zip           # install from a local zip
+clawdbot plugins install -l ./extensions/voice-call # link (no copy) for dev
 clawdbot plugins install @clawdbot/voice-call # install from npm
 clawdbot plugins update <id>
 clawdbot plugins update --all
