@@ -60,7 +60,7 @@ export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySe
   if (entry?.chatType === "group" || entry?.chatType === "channel") {
     return "group";
   }
-  if (key.startsWith("group:") || key.includes(":group:") || key.includes(":channel:")) {
+  if (key.includes(":group:") || key.includes(":channel:")) {
     return "group";
   }
   return "direct";
@@ -71,10 +71,6 @@ export function parseGroupKey(
 ): { channel?: string; kind?: "group" | "channel"; id?: string } | null {
   const agentParsed = parseAgentSessionKey(key);
   const rawKey = agentParsed?.rest ?? key;
-  if (rawKey.startsWith("group:")) {
-    const raw = rawKey.slice("group:".length);
-    return raw ? { id: raw } : null;
-  }
   const parts = rawKey.split(":").filter(Boolean);
   if (parts.length >= 3) {
     const [channel, kind, ...rest] = parts;
@@ -382,7 +378,7 @@ export function listSessionsFromStore(params: {
       const parsed = parseGroupKey(key);
       const channel = entry?.channel ?? parsed?.channel;
       const subject = entry?.subject;
-      const room = entry?.room;
+      const groupChannel = entry?.groupChannel;
       const space = entry?.space;
       const id = parsed?.id;
       const displayName =
@@ -391,7 +387,7 @@ export function listSessionsFromStore(params: {
           ? buildGroupDisplayName({
               provider: channel,
               subject,
-              room,
+              groupChannel,
               space,
               id,
               key,
@@ -405,7 +401,7 @@ export function listSessionsFromStore(params: {
         displayName,
         channel,
         subject,
-        room,
+        groupChannel,
         space,
         chatType: entry?.chatType,
         updatedAt,

@@ -71,6 +71,69 @@ function trimOutput(text: string, maxChars?: number): string {
   return trimmed.slice(0, maxChars).trim();
 }
 
+type ProviderQuery = Record<string, string | number | boolean>;
+
+function normalizeProviderQuery(
+  options?: Record<string, string | number | boolean>,
+): ProviderQuery | undefined {
+  if (!options) return undefined;
+  const query: ProviderQuery = {};
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined) continue;
+    query[key] = value;
+  }
+  return Object.keys(query).length > 0 ? query : undefined;
+}
+
+function buildDeepgramCompatQuery(options?: {
+  detectLanguage?: boolean;
+  punctuate?: boolean;
+  smartFormat?: boolean;
+}): ProviderQuery | undefined {
+  if (!options) return undefined;
+  const query: ProviderQuery = {};
+  if (typeof options.detectLanguage === "boolean") query.detect_language = options.detectLanguage;
+  if (typeof options.punctuate === "boolean") query.punctuate = options.punctuate;
+  if (typeof options.smartFormat === "boolean") query.smart_format = options.smartFormat;
+  return Object.keys(query).length > 0 ? query : undefined;
+}
+
+function normalizeDeepgramQueryKeys(query: ProviderQuery): ProviderQuery {
+  const normalized = { ...query };
+  if ("detectLanguage" in normalized) {
+    normalized.detect_language = normalized.detectLanguage as boolean;
+    delete normalized.detectLanguage;
+  }
+  if ("smartFormat" in normalized) {
+    normalized.smart_format = normalized.smartFormat as boolean;
+    delete normalized.smartFormat;
+  }
+  return normalized;
+}
+
+function resolveProviderQuery(params: {
+  providerId: string;
+  config?: MediaUnderstandingConfig;
+  entry: MediaUnderstandingModelConfig;
+}): ProviderQuery | undefined {
+  const { providerId, config, entry } = params;
+  const mergedOptions = normalizeProviderQuery({
+    ...config?.providerOptions?.[providerId],
+    ...entry.providerOptions?.[providerId],
+  });
+  if (providerId !== "deepgram") {
+    return mergedOptions;
+  }
+  let query = normalizeDeepgramQueryKeys(mergedOptions ?? {});
+  const compat = buildDeepgramCompatQuery({ ...config?.deepgram, ...entry.deepgram });
+  for (const [key, value] of Object.entries(compat ?? {})) {
+    if (query[key] === undefined) {
+      query[key] = value;
+    }
+  }
+  return Object.keys(query).length > 0 ? query : undefined;
+}
+
 function buildModelDecision(params: {
   entry: MediaUnderstandingModelConfig;
   entryType: "provider" | "cli";
@@ -220,17 +283,30 @@ async function runProviderEntry(params: {
       agentDir: params.agentDir,
     });
     const providerConfig = cfg.models?.providers?.[providerId];
+    const baseUrl = entry.baseUrl ?? params.config?.baseUrl ?? providerConfig?.baseUrl;
+    const mergedHeaders = {
+      ...providerConfig?.headers,
+      ...params.config?.headers,
+      ...entry.headers,
+    };
+    const headers = Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined;
+    const providerQuery = resolveProviderQuery({
+      providerId,
+      config: params.config,
+      entry,
+    });
     const model = entry.model?.trim() || DEFAULT_AUDIO_MODELS[providerId] || entry.model;
     const result = await provider.transcribeAudio({
       buffer: media.buffer,
       fileName: media.fileName,
       mime: media.mime,
       apiKey: key.apiKey,
-      baseUrl: providerConfig?.baseUrl,
-      headers: providerConfig?.headers,
+      baseUrl,
+      headers,
       model,
       language: entry.language ?? params.config?.language ?? cfg.tools?.media?.audio?.language,
       prompt,
+      query: providerQuery,
       timeoutMs,
     });
     return {
